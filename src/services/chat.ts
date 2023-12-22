@@ -2,7 +2,7 @@ import { PluginRequestPayload, createHeadersWithPluginSettings } from '@lobehub/
 import { produce } from 'immer';
 import { merge } from 'lodash-es';
 
-import { VISION_MODEL_WHITE_LIST } from '@/const/llm';
+import { TOOL_MODEL_WHITE_LIST, VISION_MODEL_WHITE_LIST } from '@/const/llm';
 import { DEFAULT_AGENT_CONFIG } from '@/const/settings';
 import { filesSelectors, useFileStore } from '@/store/file';
 import { useToolStore } from '@/store/tool';
@@ -16,6 +16,7 @@ import { createHeaderWithOpenAI } from './_header';
 import { OPENAI_URLS, PLUGINS_URLS } from './_url';
 
 const isVisionModel = (model?: string) => model && VISION_MODEL_WHITE_LIST.includes(model);
+const isToolModel = (model?: string) => model && TOOL_MODEL_WHITE_LIST.includes(model);
 
 interface FetchOptions {
   signal?: AbortSignal | undefined;
@@ -55,10 +56,18 @@ class ChatService {
     // 2. model is not in vision white list, because vision model can't use tools
     // TODO: we need to find some method to let vision model use tools
     const shouldUseTools = filterTools.length > 0 && !isVisionModel(payload.model);
-
     const functions = shouldUseTools ? filterTools : undefined;
 
-    return this.getChatCompletion({ ...params, functions, messages: oaiMessages }, options);
+    const toolParams: Pick<OpenAIChatStreamPayload, 'tools' | 'functions'> = {};
+
+    // by now (2023.12.22) we just use tool call in latest model
+    if (isToolModel(payload.model)) {
+      toolParams.tools = functions?.map((i) => ({ function: i, type: 'function' }));
+    } else {
+      toolParams.functions = functions;
+    }
+
+    return this.getChatCompletion({ ...params, ...toolParams, messages: oaiMessages }, options);
   };
 
   getChatCompletion = (params: Partial<OpenAIChatStreamPayload>, options?: FetchOptions) => {

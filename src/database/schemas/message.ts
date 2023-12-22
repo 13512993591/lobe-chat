@@ -13,15 +13,19 @@ const PluginSchema = z.object({
   apiName: z.string(),
   type: z.enum(['default', 'standalone', 'builtin']).default('default'),
 });
+const ToolSchema = PluginSchema.extend({
+  id: z.string(),
+});
 
 export const DB_MessageSchema = z.object({
-  role: z.enum(['user', 'system', 'assistant', 'function']),
+  role: z.enum(['user', 'system', 'assistant', 'function', 'tool']),
   content: z.string(),
   files: z.array(z.string()).optional(),
   favorite: z.number().int().min(0).max(1).optional(),
   error: z.any().optional(),
 
   plugin: PluginSchema.optional(),
+  tools: z.array(ToolSchema).optional(),
   pluginState: z.any().optional(),
   fromModel: z.string().optional(),
   translate: TranslateSchema.optional().or(z.null()),

@@ -9,7 +9,6 @@ import { VISION_MODEL_WHITE_LIST } from '@/const/llm';
 import { LOADING_FLAT } from '@/const/message';
 import { VISION_MODEL_DEFAULT_MAX_TOKENS } from '@/const/settings';
 import { CreateMessageParams } from '@/database/models/message';
-import { DB_Message } from '@/database/schemas/message';
 import { chatService } from '@/services/chat';
 import { messageService } from '@/services/message';
 import { topicService } from '@/services/topic';
@@ -19,7 +18,12 @@ import { useSessionStore } from '@/store/session';
 import { agentSelectors } from '@/store/session/selectors';
 import { ChatMessage } from '@/types/message';
 import { fetchSSE } from '@/utils/fetch';
-import { isFunctionMessageAtStart, testFunctionMessageAtEnd } from '@/utils/message';
+import {
+  isFunctionMessageAtStart,
+  isToolMessageAtStart,
+  testFunctionMessageAtEnd,
+  testToolMessageAtEnd,
+} from '@/utils/message';
 import { setNamespace } from '@/utils/storeDebug';
 
 import { chatSelectors } from '../../selectors';
@@ -66,7 +70,11 @@ export interface ChatMessageAction {
     content: string;
     functionCallAtEnd: boolean;
     functionCallContent: string;
+
     isFunctionCall: boolean;
+    isToolCall: boolean;
+    toolCallAtEnd: boolean;
+    toolCallContent: string;
   }>;
   toggleChatLoading: (
     loading: boolean,
@@ -235,12 +243,18 @@ export const chatMessage: StateCreator<
 
   // the internal process method of the AI message
   coreProcessMessage: async (messages, userMessageId) => {
-    const { fetchAIChatMessage, triggerFunctionCall, refreshMessages, activeTopicId } = get();
+    const {
+      fetchAIChatMessage,
+      triggerFunctionCall,
+      triggerToolCalls,
+      refreshMessages,
+      activeTopicId,
+    } = get();
 
     const { model } = getAgentConfig();
 
     // 1. Add an empty message to place the AI response
-    const assistantMessage: DB_Message = {
+    const assistantMessage: CreateMessageParams = {
       role: 'assistant',
       content: LOADING_FLAT,
       fromModel: model,
@@ -254,7 +268,7 @@ export const chatMessage: StateCreator<
     await refreshMessages();
 
     // 2. fetch the AI response
-    const { isFunctionCall, content, functionCallAtEnd, functionCallContent } =
+    const { isFunctionCall, content, functionCallAtEnd, functionCallContent, isToolCall } =
       await fetchAIChatMessage(messages, mid);
 
     // 3. if it's the function call message, trigger the function method
@@ -270,9 +284,7 @@ export const chatMessage: StateCreator<
         const functionMessage: CreateMessageParams = {
           role: 'function',
           content: functionCallContent,
-          extra: {
-            fromModel: model,
-          },
+          fromModel: model,
           parentId: userMessageId,
           sessionId: get().activeId,
           topicId: activeTopicId,
@@ -282,6 +294,13 @@ export const chatMessage: StateCreator<
 
       await refreshMessages();
       await triggerFunctionCall(functionId);
+    }
+
+    // 4. if it's the tool call message, trigger the tool call
+    if (isToolCall) {
+      //TODO: need to check if there is also some tool calls at end
+
+      await triggerToolCalls(mid);
     }
   },
   dispatchMessage: (payload) => {
@@ -362,6 +381,10 @@ export const chatMessage: StateCreator<
     let functionCallAtEnd = false;
     let functionCallContent = '';
 
+    let isToolCall = false;
+    let toolCallAtEnd = false;
+    let toolCallContent = '';
+
     await fetchSSE(fetcher, {
       onErrorHandle: async (error) => {
         await messageService.updateMessageError(assistantId, error);
@@ -380,6 +403,8 @@ export const chatMessage: StateCreator<
 
         // is this message is just a function call
         if (isFunctionMessageAtStart(output)) isFunctionCall = true;
+        // is this message is a tool call
+        if (isToolMessageAtStart(output)) isToolCall = true;
       },
     });
 
@@ -398,7 +423,26 @@ export const chatMessage: StateCreator<
       }
     }
 
-    return { content: output, functionCallAtEnd, functionCallContent, isFunctionCall };
+    if (!isToolCall) {
+      const { content, valid } = testToolMessageAtEnd(output);
+
+      // if tc at end, replace the message
+      if (valid) {
+        isToolCall = true;
+        toolCallAtEnd = true;
+        toolCallContent = content;
+      }
+    }
+
+    return {
+      content: output,
+      functionCallAtEnd,
+      functionCallContent,
+      isFunctionCall,
+      isToolCall,
+      toolCallAtEnd,
+      toolCallContent,
+    };
   },
   toggleChatLoading: (loading, id, action) => {
     if (loading) {

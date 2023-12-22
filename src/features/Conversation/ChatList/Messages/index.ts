@@ -10,12 +10,14 @@ import { pathString } from '@/utils/url';
 import { AssistantMessage } from './Assistant';
 import { DefaultMessage } from './Default';
 import { FunctionMessage } from './Function';
+import { ToolMessage } from './Tool';
 import { UserMessage } from './User';
 
 export const renderMessages: ChatListProps['renderMessages'] = {
   assistant: AssistantMessage as any,
   default: DefaultMessage as any,
   function: FunctionMessage as any,
+  tool: ToolMessage as any,
   user: UserMessage as any,
 };
 

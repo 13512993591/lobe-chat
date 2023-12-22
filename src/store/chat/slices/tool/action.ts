@@ -7,8 +7,8 @@ import { messageService } from '@/services/message';
 import { ChatStore } from '@/store/chat/store';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/selectors';
-import { ChatPluginPayload } from '@/types/message';
-import { OpenAIFunctionCall } from '@/types/openai/functionCall';
+import { ChatPluginPayload, ChatToolPayload } from '@/types/message';
+import { OpenAIFunctionCall, OpenAIToolCall } from '@/types/openai/functionCall';
 import { setNamespace } from '@/utils/storeDebug';
 
 import { chatSelectors } from '../../selectors';
@@ -20,6 +20,7 @@ export interface ChatPluginAction {
   invokeBuiltinTool: (id: string, payload: ChatPluginPayload) => Promise<void>;
   invokeDefaultTypePlugin: (id: string, payload: any) => Promise<void>;
   triggerFunctionCall: (id: string) => Promise<void>;
+  triggerToolCalls: (id: string) => Promise<void>;
   updatePluginState: (id: string, key: string, value: any) => Promise<void>;
 }
 
@@ -86,10 +87,10 @@ export const chatPlugin: StateCreator<
     await coreProcessMessage(chats, id);
   },
   triggerFunctionCall: async (id) => {
-    const { invokeDefaultTypePlugin, invokeBuiltinTool, refreshMessages } = get();
-
     const message = chatSelectors.getMessageById(id)(get());
     if (!message) return;
+
+    const { invokeDefaultTypePlugin, invokeBuiltinTool, refreshMessages } = get();
 
     let payload = { apiName: '', identifier: '' } as ChatPluginPayload;
 
@@ -145,6 +146,58 @@ export const chatPlugin: StateCreator<
       }
     }
   },
+
+  triggerToolCalls: async (id) => {
+    const message = chatSelectors.getMessageById(id)(get());
+    if (!message) return;
+    const { refreshMessages } = get();
+
+    let payload = [] as ChatToolPayload[];
+
+    if (message.content) {
+      const { tool_calls } = JSON.parse(message.content) as {
+        tool_calls: OpenAIToolCall[];
+      };
+
+      for (const i of tool_calls) {
+        const [identifier, apiName, type] = i.function.name.split(PLUGIN_SCHEMA_SEPARATOR);
+
+        const call = {
+          apiName,
+          arguments: i.function.arguments,
+          id: i.id,
+          identifier,
+          type: (type ?? 'default') as any,
+        };
+
+        // if the apiName is md5, try to find the correct apiName in the plugins
+        if (apiName.startsWith(PLUGIN_SCHEMA_API_MD5_PREFIX)) {
+          const md5 = apiName.replace(PLUGIN_SCHEMA_API_MD5_PREFIX, '');
+          const manifest = pluginSelectors.getPluginManifestById(identifier)(
+            useToolStore.getState(),
+          );
+
+          const api = manifest?.api.find((api) => Md5.hashStr(api.name).toString() === md5);
+          if (!api) return;
+          call.apiName = api.name;
+        }
+
+        payload.push(call);
+      }
+
+      payload = payload.filter((p) => p.apiName);
+    } else {
+      if (message.tools) payload = message.tools;
+    }
+
+    await messageService.updateMessage(id, {
+      content: !!message.content ? '' : undefined,
+      role: 'tool',
+      tools: payload,
+    });
+    await refreshMessages();
+  },
+
   updatePluginState: async (id, key, value) => {
     const { refreshMessages } = get();
 

@@ -36,6 +36,13 @@ const getMeta = (message: ChatMessage) => {
         title: 'plugin-unknown',
       };
     }
+    case 'tool': {
+      // TODO: 后续改成将 plugin metadata 写入 message metadata 的方案
+      return {
+        avatar: '⚙',
+        title: 'tools-unknown',
+      };
+    }
   }
 };
 

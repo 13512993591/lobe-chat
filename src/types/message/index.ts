@@ -3,6 +3,7 @@ import { Translate } from '@/types/translate';
 
 import { LLMRoleType } from '../llm';
 import { BaseDataModel } from '../meta';
+import { ChatPluginPayload, ChatToolPayload } from './tools';
 
 /**
  * 聊天消息错误对象
@@ -23,12 +24,7 @@ export interface ChatTTS {
   voice?: string;
 }
 
-export interface ChatPluginPayload {
-  apiName: string;
-  arguments: string;
-  identifier: string;
-  type: 'standalone' | 'default' | 'builtin';
-}
+export * from './tools';
 
 export interface ChatMessage extends BaseDataModel {
   content: string;
@@ -45,8 +41,8 @@ export interface ChatMessage extends BaseDataModel {
   files?: string[];
   parentId?: string;
   plugin?: ChatPluginPayload;
-
   pluginState?: any;
+
   // 引用
   quotaId?: string;
   /**
@@ -55,6 +51,7 @@ export interface ChatMessage extends BaseDataModel {
    */
   role: LLMRoleType;
   sessionId?: string;
+  tools?: ChatToolPayload[];
   /**
    * 保存到主题的消息
    */
